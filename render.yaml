@@ -1,0 +1,50 @@
+services:
+  # ── API Server ──────────────────────────────────────────────────────────────
+  - type: web
+    name: artha-monitor-api
+    runtime: node
+    rootDir: backend/api
+    buildCommand: npm install && npm run build && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm run start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PREFIX
+        value: /api/v1
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 90d
+      # ↓ Set these in Render dashboard → Environment
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false   # e.g. https://your-app.vercel.app
+
+  # ── Probe Worker ────────────────────────────────────────────────────────────
+  - type: worker
+    name: artha-monitor-worker
+    runtime: node
+    rootDir: backend/worker
+    buildCommand: npm install && npm run build && npx prisma generate
+    startCommand: npm run start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: WORKER_CONCURRENCY
+        value: 10
+      - key: WORKER_JOB_TIMEOUT
+        value: 30000
+      # ↓ Same DATABASE_URL as the API — set once in Render dashboard
+      - key: DATABASE_URL
+        sync: false

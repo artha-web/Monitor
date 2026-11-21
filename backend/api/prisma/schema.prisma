@@ -1,0 +1,217 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String?
+  passwordHash    String
+  emailVerified   Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastLoginAt     DateTime?
+  role            Role      @default(USER)
+  quota           Json      @default("{\"maxMonitors\": 50, \"maxChecksPerMonth\": 100000, \"minInterval\": \"1m\", \"webhooksEnabled\": false, \"apiAccess\": true}")
+
+  monitors        Monitor[]
+  sessions        Session[]
+  passwordResets  PasswordReset[]
+
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Session {
+  id          String   @id @default(uuid())
+  userId      String
+  token       String   @unique
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  userAgent   String?
+  ipAddress   String?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model Monitor {
+  id                    String       @id @default(uuid())
+  userId                String
+  name                  String
+  url                   String
+  method                HttpMethod   @default(GET)
+  interval              String       @default("1m")
+  timeout               Int          @default(10000)
+  expectedStatusCodes   Int[]
+  expectedResponseText  String?
+  headers               Json?
+  body                  String?
+  enabled               Boolean      @default(true)
+  notificationSettings  Json         @default("{\"emailEnabled\": true, \"emailOnDown\": true, \"emailOnUp\": true, \"webhookUrl\": null, \"webhookOnDown\": false, \"webhookOnUp\": false}")
+  activeWindowStart     String?
+  activeWindowEnd       String?
+  activeWindowTimezone  String?       @default("UTC")
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  lastCheckAt           DateTime?
+  nextCheckAt           DateTime?
+  currentStatus         MonitorStatus @default(UNKNOWN)
+
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkResults          CheckResult[]
+  downtimeEvents        DowntimeEvent[]
+
+  @@index([userId])
+  @@index([enabled])
+  @@index([nextCheckAt])
+  @@index([currentStatus])
+  @@index([userId, enabled])
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+}
+
+enum MonitorInterval {
+  M1
+  M2
+  M3
+  M5
+  M10
+  M13
+  M15
+  M20
+  M30
+}
+
+enum MonitorStatus {
+  UP
+  DOWN
+  PENDING
+  UNKNOWN
+  MAINTENANCE
+}
+
+model CheckResult {
+  id            String              @id @default(uuid())
+  monitorId     String
+  status        CheckResultStatus
+  statusCode    Int?
+  responseTime  Int
+  responseBody  String?             @db.Text
+  errorMessage  String?
+  checkedAt     DateTime            @default(now())
+
+  monitor       Monitor             @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId])
+  @@index([checkedAt])
+  @@index([status])
+  @@index([monitorId, checkedAt])
+}
+
+enum CheckResultStatus {
+  SUCCESS
+  FAILURE
+  TIMEOUT
+  ERROR
+}
+
+model DowntimeEvent {
+  id          String    @id @default(uuid())
+  monitorId   String
+  startedAt   DateTime
+  endedAt     DateTime?
+  duration    Int?
+  reason      String?
+  createdAt   DateTime  @default(now())
+
+  monitor     Monitor   @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId])
+  @@index([startedAt])
+  @@index([endedAt])
+  @@index([monitorId, startedAt])
+}
+
+model WorkerJob {
+  id            String       @id @default(uuid())
+  monitorId     String
+  scheduledAt   DateTime
+  attempts      Int          @default(0)
+  maxAttempts   Int          @default(3)
+  status        JobStatus    @default(PENDING)
+  lockedAt      DateTime?
+  lockedBy      String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([monitorId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([lockedBy])
+  @@index([status, scheduledAt])
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  oldData   Json?
+  newData   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([action])
+}

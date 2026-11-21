@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment variables & secrets (CRITICAL: Never commit .env files)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+backend/api/.env
+backend/worker/.env
+frontend/.env
+!*.env.example
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+.next/
+out/
+
+# Build artifacts (TypeScript compiled output)
+dist/
+**/dist/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing & Coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# Turborepo & Cache
+.turbo/
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local databases & Prisma
+*.db
+*.db-journal
+*.sqlite
