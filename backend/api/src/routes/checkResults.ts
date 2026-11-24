@@ -18,11 +18,17 @@ import {
 
 const router = Router();
 
+const normalizeCheckResultStatus = (status: string): CheckResultResponse['status'] =>
+  status.toLowerCase() as CheckResultResponse['status'];
+
+const denormalizeCheckResultStatus = (status: CheckResultsQuery['status']): string | undefined =>
+  status?.toUpperCase();
+
 // Helper to format check result
 const formatCheckResult = (result: any): CheckResultResponse => ({
   id: result.id,
   monitorId: result.monitorId,
-  status: result.status,
+  status: normalizeCheckResultStatus(result.status),
   statusCode: result.statusCode,
   responseTime: result.responseTime,
   responseBody: result.responseBody,
@@ -60,7 +66,7 @@ router.get('/monitor/:monitorId', asyncHandler(async (req: AuthenticatedRequest,
   const where: any = { monitorId };
 
   if (status) {
-    where.status = status;
+    where.status = denormalizeCheckResultStatus(status);
   }
 
   if (from || to) {

@@ -121,6 +121,32 @@ router.get('/monitor/:monitorId', asyncHandler(async (req: AuthenticatedRequest,
     reason: event.reason || null,
   }));
 
+  // Build real time-series buckets from actual check results
+  const bucketCount = period === '24h' ? 24 : period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 365;
+  const bucketMs = (hours * 60 * 60 * 1000) / bucketCount;
+  const bucketStart = effectiveSince.getTime();
+
+  // Count successes and totals per bucket using a single pass
+  const bucketSuccess = new Array(bucketCount).fill(0);
+  const bucketTotal = new Array(bucketCount).fill(0);
+  for (const r of results) {
+    const idx = Math.min(
+      Math.floor((r.checkedAt.getTime() - bucketStart) / bucketMs),
+      bucketCount - 1
+    );
+    if (idx >= 0) {
+      bucketTotal[idx]++;
+      if (r.status === 'SUCCESS') bucketSuccess[idx]++;
+    }
+  }
+
+  const timeSeries = Array.from({ length: bucketCount }, (_, i) => ({
+    date: new Date(bucketStart + i * bucketMs).toISOString(),
+    uptime: bucketTotal[i] > 0
+      ? Math.round((bucketSuccess[i] / bucketTotal[i]) * 10000) / 100
+      : (i === 0 ? uptimePercentage : null as any), // null = no data for this bucket
+  })).filter(p => p.uptime !== null);
+
   const response: UptimeStatsResponse = {
     monitorId,
     period,
@@ -132,6 +158,7 @@ router.get('/monitor/:monitorId', asyncHandler(async (req: AuthenticatedRequest,
     minResponseTime,
     maxResponseTime,
     downtimeEvents: formattedDowntimeEvents,
+    timeSeries,
   }
 
   // Validate response

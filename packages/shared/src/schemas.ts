@@ -23,7 +23,7 @@ export const monitorIntervalSchema = z
 
 // Monitor status schema
 export const monitorStatusSchema = z.enum([
-  'up', 'down', 'pending', 'unknown', 'maintenance'
+  'up', 'down', 'pending', 'unknown', 'maintenance', 'paused'
 ]) satisfies z.ZodType<MonitorStatus>;
 
 // Check result status schema
@@ -41,8 +41,8 @@ export const notificationSettingsSchema = z.object({
   webhookOnUp: z.boolean().default(false),
 });
 
-// Create monitor input schema
-export const createMonitorSchema = z.object({
+// Base monitor input schema object
+export const baseMonitorInputSchema = z.object({
   name: z.string().min(1, 'Monitor name is required').max(100, 'Name too long'),
   url: z.string().url('Invalid URL format'),
   method: httpMethodSchema.default('GET'),
@@ -58,10 +58,47 @@ export const createMonitorSchema = z.object({
   activeWindowTimezone: z.string().max(60).optional().nullable(),
 });
 
+const validateWindowDuration = (data: { activeWindowStart?: string | null; activeWindowEnd?: string | null; interval?: MonitorInterval }) => {
+  if (data.activeWindowStart && data.activeWindowEnd) {
+    const [startH = 0, startM = 0] = data.activeWindowStart.split(':').map(Number);
+    const [endH = 0, endM = 0] = data.activeWindowEnd.split(':').map(Number);
+    let windowMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+    if (windowMinutes < 0) windowMinutes += 24 * 60; // overnight window
+    
+    const intervalMinutes = data.interval === '1m' ? 1
+      : data.interval === '5m' ? 5
+      : data.interval === '10m' ? 10
+      : data.interval === '15m' ? 15
+      : data.interval === '30m' ? 30
+      : data.interval === '1h' ? 60
+      : data.interval === '6h' ? 360
+      : data.interval === '12h' ? 720
+      : data.interval === '24h' ? 1440 : 1;
+
+    return windowMinutes >= intervalMinutes;
+  }
+  return true;
+};
+
+// Create monitor input schema
+export const createMonitorSchema = baseMonitorInputSchema.refine(
+  validateWindowDuration,
+  {
+    message: 'Active schedule window duration must be at least as long as the monitor interval',
+    path: ['activeWindowEnd'],
+  }
+);
+
 // Update monitor input schema
-export const updateMonitorSchema = createMonitorSchema.partial().extend({
+export const updateMonitorSchema = baseMonitorInputSchema.partial().extend({
   enabled: z.boolean().optional(),
-});
+}).refine(
+  validateWindowDuration,
+  {
+    message: 'Active schedule window duration must be at least as long as the monitor interval',
+    path: ['activeWindowEnd'],
+  }
+);
 
 // Register input schema
 export const registerSchema = z.object({
@@ -215,6 +252,11 @@ export const uptimeStatsSchema = z.object({
   minResponseTime: z.number().min(0),
   maxResponseTime: z.number().min(0),
   downtimeEvents: z.array(downtimeEventSchema),
+  // Real bucketed time-series for the uptime chart
+  timeSeries: z.array(z.object({
+    date: z.string(),
+    uptime: z.number().min(0).max(100),
+  })).optional(),
 });
 
 // User response schema (without sensitive data)

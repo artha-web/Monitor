@@ -17,7 +17,7 @@ export type MonitorInterval =
   | '30m'
   | (string & {});
 
-export type MonitorStatus = 'up' | 'down' | 'pending' | 'unknown' | 'maintenance';
+export type MonitorStatus = 'up' | 'down' | 'pending' | 'unknown' | 'maintenance' | 'paused';
 
 export type CheckResultStatus = 'success' | 'failure' | 'timeout' | 'error';
 

@@ -30,30 +30,25 @@ export function UptimeChart({
   uptimePercentage = 100,
   className,
 }: UptimeChartProps) {
-  // If no detailed hourly data is available, generate sample trend points based on uptimePercentage
-  const chartData = React.useMemo(() => {
-    if (data.length > 0) return data;
-
-    const count = period === '24h' ? 24 : period === '7d' ? 7 : 30;
-    const now = Date.now();
-    const step = period === '24h' ? 3600_000 : 86400_000;
-
-    return Array.from({ length: count }).map((_, i) => {
-      const time = new Date(now - (count - 1 - i) * step);
-      return {
-        date: time.toISOString(),
-        uptime: uptimePercentage,
-      };
-    });
-  }, [data, period, uptimePercentage]);
-
   const color = uptimePercentage >= 99 ? '#10b981' : uptimePercentage >= 95 ? '#f59e0b' : '#ef4444';
+
+  // Show empty state when there is no real data yet
+  if (data.length === 0) {
+    return (
+      <div className="flex h-[240px] flex-col items-center justify-center rounded-lg border border-dashed gap-2">
+        <p className="text-sm font-medium text-muted-foreground">No uptime data yet</p>
+        <p className="text-xs text-muted-foreground">
+          Data will appear here after the first health probes complete.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className={className}>
       <div className="h-[240px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="uptimeGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={color} stopOpacity={0.4} />

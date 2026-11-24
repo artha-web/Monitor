@@ -101,14 +101,23 @@ export const authMiddleware = async (
       throw new AuthenticationError('Invalid access token');
     }
 
-    // Verify user still exists and is active
+    // Verify user still exists, is active, and session is valid
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true }
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        sessions: {
+          where: { expiresAt: { gt: new Date() } },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
 
-    if (!user) {
-      throw new AuthenticationError('User not found');
+    if (!user || user.sessions.length === 0) {
+      throw new AuthenticationError('Session expired or revoked');
     }
 
     // Attach user to request

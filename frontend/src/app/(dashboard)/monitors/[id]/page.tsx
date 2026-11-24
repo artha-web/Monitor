@@ -522,6 +522,7 @@ export default function MonitorDetailPage() {
             </CardHeader>
             <CardContent className="p-5 pt-0">
               <UptimeChart
+                data={uptimeStats?.timeSeries}
                 period={selectedPeriod}
                 uptimePercentage={uptimeStats?.uptimePercentage ?? monitor.uptimePercentage}
               />

@@ -4,6 +4,7 @@
  */
 
 import 'dotenv/config';
+import http from 'node:http';
 import { PrismaClient } from '@prisma/client';
 import { pino } from 'pino';
 import { Worker } from './worker.js';
@@ -62,9 +63,30 @@ async function main() {
     await worker.start();
     logger.info('Worker started');
 
+    // Minimal HTTP health server so Render can run the worker as a free Web Service
+    const port = parseInt(process.env.PORT || '3002', 10);
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"status":"ok"}');
+    });
+    server.listen(port, () => {
+      logger.info({ port }, 'Worker health server listening');
+    });
+
+    // Optional keep-alive ping when hosted on Render (uses Render's built-in RENDER_EXTERNAL_URL)
+    const selfPingBase = process.env.SELF_PING_URL || process.env.RENDER_EXTERNAL_URL;
+    const selfPingInterval = selfPingBase
+      ? setInterval(() => {
+          fetch(`${selfPingBase.replace(/\/+$/, '')}/health`).catch(() => {});
+        }, 14 * 60 * 1000)
+      : null;
+
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       logger.info({ signal }, 'Shutdown signal received');
+
+      if (selfPingInterval) clearInterval(selfPingInterval);
+      server.close();
 
       await worker.stop();
       logger.info('Worker stopped');

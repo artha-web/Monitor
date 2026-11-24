@@ -53,6 +53,14 @@ const statusConfig: Record<
     pulseBg: 'bg-zinc-400',
     border: 'border-zinc-500/20',
   },
+  paused: {
+    label: 'Paused',
+    bg: 'bg-slate-500/10',
+    text: 'text-slate-600 dark:text-slate-400',
+    dotBg: 'bg-slate-400',
+    pulseBg: 'bg-slate-300',
+    border: 'border-slate-500/20',
+  },
 };
 
 export function StatusBadge({

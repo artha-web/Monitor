@@ -41,9 +41,13 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-// CORS configuration
+// CORS configuration: sanitize origins to strip trailing slashes and whitespace
+const allowedOrigins = (process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'])
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

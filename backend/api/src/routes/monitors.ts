@@ -54,7 +54,7 @@ const formatMonitor = (monitor: any): MonitorResponse => {
     updatedAt: monitor.updatedAt.toISOString(),
     lastCheckAt: monitor.lastCheckAt?.toISOString() || null,
     nextCheckAt: monitor.nextCheckAt?.toISOString() || null,
-    currentStatus: monitor.currentStatus,
+    currentStatus: !monitor.enabled ? 'paused' : monitor.currentStatus,
     uptimePercentage,
   };
 };
@@ -392,6 +392,26 @@ router.post('/:id/toggle', asyncHandler(async (req: AuthenticatedRequest, res: R
     ? new Date(Date.now() + intervalToMs(monitor.interval as any))
     : null;
 
+  const now = new Date();
+
+  // If pausing the monitor, gracefully close any active downtime events
+  if (!newEnabled) {
+    const activeDowntimes = await prisma.downtimeEvent.findMany({
+      where: { monitorId: id, endedAt: null },
+    });
+
+    for (const dt of activeDowntimes) {
+      const duration = Math.max(0, Math.floor((now.getTime() - dt.startedAt.getTime()) / 1000));
+      await prisma.downtimeEvent.update({
+        where: { id: dt.id },
+        data: {
+          endedAt: now,
+          duration,
+        },
+      });
+    }
+  }
+
   const updatedMonitor = await prisma.monitor.update({
     where: { id },
     data: {
@@ -452,11 +472,12 @@ router.post('/:id/check', asyncHandler(async (req: AuthenticatedRequest, res: Re
     throw new ValidationError('Cannot check disabled monitor');
   }
 
-  // Create immediate worker job
+  // Create immediate worker job (maxAttempts: 1 flags manual check to bypass schedule window)
   await prisma.workerJob.create({
     data: {
       monitorId: id,
       scheduledAt: new Date(),
+      maxAttempts: 1,
     },
   });
 

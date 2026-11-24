@@ -38,6 +38,12 @@ interface Monitor {
   activeWindowStart: string | null;
   activeWindowEnd: string | null;
   activeWindowTimezone: string | null;
+  notificationSettings?: {
+    webhookUrl?: string | null;
+    webhookOnDown?: boolean;
+    webhookOnUp?: boolean;
+    emailEnabled?: boolean;
+  } | null | any;
 }
 
 export class Worker {
@@ -171,8 +177,10 @@ export class Worker {
         return;
       }
 
-      // Check active time window
+      // Check active time window (manual checks with maxAttempts === 1 bypass schedule window)
+      const isManualCheck = job.maxAttempts === 1;
       if (
+        !isManualCheck &&
         !isWithinActiveWindow({
           activeWindowStart: monitor.activeWindowStart,
           activeWindowEnd: monitor.activeWindowEnd,
@@ -193,6 +201,18 @@ export class Worker {
           },
           'Monitor is outside active schedule window. Rescheduling for next window.'
         );
+
+        // Close any active downtime events so off-schedule hours do not accumulate as outage duration
+        const activeDowntime = await this.prisma.downtimeEvent.findFirst({
+          where: { monitorId: monitor.id, endedAt: null },
+        });
+        if (activeDowntime) {
+          const duration = Math.max(0, Math.floor((Date.now() - activeDowntime.startedAt.getTime()) / 1000));
+          await this.prisma.downtimeEvent.update({
+            where: { id: activeDowntime.id },
+            data: { endedAt: new Date(), duration },
+          });
+        }
 
         await this.prisma.$transaction(async (tx) => {
           await tx.monitor.update({
@@ -257,6 +277,7 @@ export class Worker {
         activeWindowStart: true,
         activeWindowEnd: true,
         activeWindowTimezone: true,
+        notificationSettings: true,
       },
     });
 
@@ -265,6 +286,7 @@ export class Worker {
     return {
       ...monitor,
       headers: monitor.headers as Record<string, string> | null,
+      notificationSettings: monitor.notificationSettings as any,
     };
   }
 
@@ -423,27 +445,33 @@ export class Worker {
       });
 
       // Handle downtime events
-      if (currentMonitor && currentMonitor.currentStatus !== newStatus) {
-        if (newStatus === 'DOWN' && currentMonitor.currentStatus === 'UP') {
-          // Create new downtime event
-          await tx.downtimeEvent.create({
-            data: {
-              monitorId: monitor.id,
-              startedAt: now,
-              reason: result.errorMessage || `Status: ${result.status}`,
-            },
-          });
-        } else if (newStatus === 'UP' && currentMonitor.currentStatus === 'DOWN') {
-          // End the current downtime event
+      if (currentMonitor) {
+        if (newStatus === 'DOWN' && currentMonitor.currentStatus !== 'DOWN') {
+          // Transition to DOWN: ensure any open event is handled, and open a new downtime event
           const activeDowntime = await tx.downtimeEvent.findFirst({
             where: { monitorId: monitor.id, endedAt: null },
             orderBy: { startedAt: 'desc' },
           });
 
-          if (activeDowntime) {
-            const duration = Math.floor((now.getTime() - activeDowntime.startedAt.getTime()) / 1000);
+          if (!activeDowntime) {
+            await tx.downtimeEvent.create({
+              data: {
+                monitorId: monitor.id,
+                startedAt: now,
+                reason: result.errorMessage || `Status: ${result.status}`,
+              },
+            });
+          }
+        } else if (newStatus === 'UP' && currentMonitor.currentStatus !== 'UP') {
+          // Transition to UP: close ALL open downtime events for this monitor
+          const openDowntimes = await tx.downtimeEvent.findMany({
+            where: { monitorId: monitor.id, endedAt: null },
+          });
+
+          for (const event of openDowntimes) {
+            const duration = Math.max(0, Math.floor((now.getTime() - event.startedAt.getTime()) / 1000));
             await tx.downtimeEvent.update({
-              where: { id: activeDowntime.id },
+              where: { id: event.id },
               data: {
                 endedAt: now,
                 duration,
@@ -461,6 +489,35 @@ export class Worker {
         },
       });
     });
+
+    // Dispatch webhook notification on status transition
+    const notif = monitor.notificationSettings as {
+      webhookUrl?: string | null;
+      webhookOnDown?: boolean;
+      webhookOnUp?: boolean;
+    } | null;
+
+    if (notif?.webhookUrl && currentMonitor && currentMonitor.currentStatus !== newStatus) {
+      const shouldNotify =
+        (newStatus === 'DOWN' && Boolean(notif.webhookOnDown)) ||
+        (newStatus === 'UP' && Boolean(notif.webhookOnUp));
+
+      if (shouldNotify) {
+        fetch(notif.webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: newStatus === 'DOWN' ? 'monitor.down' : 'monitor.up',
+            monitor: { id: monitor.id, name: monitor.name, url: monitor.url },
+            status: newStatus,
+            timestamp: now.toISOString(),
+            reason: result.errorMessage || `Status: ${result.status}`,
+          }),
+        }).catch((err) => {
+          this.logger.warn({ error: err.message, monitorId: monitor.id }, 'Failed to deliver webhook notification');
+        });
+      }
+    }
   }
 
   private async completeJob(jobId: string, status: JobStatus): Promise<void> {
